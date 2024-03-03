@@ -103,8 +103,6 @@ const MQTT_USERNAME: &str = env!("MQTT_USERNAME");
 const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
 const MAX_MQTT_DEVICES: usize = 64;
 
-// static mut APP_CORE_STACK: cpu_control::Stack<8192> = cpu_control::Stack::new();
-
 macro_rules! format_mac {
     ($mac:expr) => {
         format!(
@@ -242,8 +240,6 @@ impl DeviceData{
         self.data = json.as_bytes().to_vec();
     }
 }
-
-
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
