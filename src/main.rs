@@ -234,9 +234,11 @@ impl DeviceData{
         self.device_mac.to_string() + "/set"
     }
     fn json_payload(&self) -> String {
+        // TODO: implement json serialization
         self.data.iter().map(|byte| format!("{:?}", byte)).collect::<String>()
     }
     fn set_data_from_json(&mut self, json: &str){
+        // TODO: implement json deserialization
         self.data = json.as_bytes().to_vec();
     }
 }
@@ -651,8 +653,6 @@ async fn wifi_task(
 
 #[main]
 async fn main(spawner:Spawner) {
-    
-
     init_heap();
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
@@ -706,8 +706,4 @@ async fn main(spawner:Spawner) {
     spawner.spawn(connection(wifi_controller)).ok();
     spawner.spawn(net_task(net_stack)).ok();
     spawner.spawn(wifi_task(net_stack, esp_now_send_channel, esp_now_recv_channel, esp_now_send_status_signal)).ok();
-
-
 }
-
-
