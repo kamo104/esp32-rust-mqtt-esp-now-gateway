@@ -3,17 +3,11 @@
 #![feature(type_alias_impl_trait)]
 #![feature(iter_next_chunk)]
 
-
-#![allow(unused_variables)]
-#![allow(unused_imports)]
-
 extern crate alloc;
 use alloc::{
-    borrow::ToOwned, fmt::{Display, Result}, format, rc, string::{String, ToString}, vec::Vec,
+    fmt::Result, format, string::{String, ToString}, vec::Vec,
 };
-use defmt::Str;
-use core::{borrow::BorrowMut, fmt::Debug, mem::MaybeUninit};
-// use std::path::Display;
+use core::{fmt::Debug, mem::MaybeUninit};
 
 use int_enum::IntEnum;
 
@@ -24,26 +18,10 @@ use esp32_hal::{
     efuse::Efuse, 
     peripherals::Peripherals, 
     prelude::*, 
-    rtc_cntl::{
-        get_reset_reason,
-        get_wakeup_cause,
-        sleep::{Ext1WakeupSource, TimerWakeupSource, WakeupLevel},
-        SocResetReason,
-    }, 
-    rtc_pins, 
     timer::TimerGroup, 
-    Cpu, 
-    Delay, 
     Rng, 
-    Rtc, 
-    IO,
-    embassy::{
-        self,
-        executor::Executor,
-    },
-    // cpu_control::self,
-    cpu_control,
-    cpu_control::CpuControl,
+    Rtc,
+    embassy,
 };
 
 use esp_wifi::{
@@ -73,7 +51,6 @@ use embassy_executor::Spawner;
 
 use embassy_net::{
     tcp::TcpSocket,
-    dns::DnsQueryType, 
     Config, 
     Ipv4Address
 };
@@ -86,7 +63,6 @@ use embassy_futures::select::{
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, 
     channel::Channel,
-    blocking_mutex::CriticalSectionMutex,
     signal::Signal
 };
 
@@ -100,12 +76,11 @@ use embedded_svc::wifi::{
     ClientConfiguration, Configuration, Wifi
 };
 
-use smoltcp::iface::SocketStorage;
     
 use esp_backtrace as _;
 use esp_println as _;
 
-use esp_println::{print, println};
+use esp_println::println;
 
 use rust_mqtt::{
     client::{
@@ -329,7 +304,7 @@ fn parse_esp_now_data(data:ReceivedData) -> Vec<DeviceData>{
             EspNowDeviceType::DeviceType =>{
                 let device_data = match iter.next_chunk::<2>(){
                     Ok(data) => *data[1],
-                    Err(not_enough_data_inter) => {
+                    Err(_not_enough_data_iter) => {
                         println!("{} {:?}", INVALID_MESSAGE, device);
                         continue;
                     }
@@ -485,7 +460,6 @@ async fn connection(mut controller: WifiController<'static>) {
 
 #[embassy_executor::task]
 async fn wifi_task(
-    spawner:Spawner, 
     net_stack: &'static embassy_net::Stack<WifiDevice<'static, WifiStaDevice>>,
     esp_now_send_channel: &'static Channel<CriticalSectionRawMutex, EspNowSendData,5>,
     esp_now_recv_channel: &'static Channel<CriticalSectionRawMutex, Vec<DeviceData>, 5>,
@@ -561,9 +535,7 @@ async fn wifi_task(
 
         println!("Connected to MQTT server");
         
-        // let res = client.subscribe_to_topic("test").await;
         // TODO: subscribe to all topics
-
         let string_topics: Vec<String> = remembered_devices.iter().map(|device| device.command_topic()).collect();
         let topics: heapless::Vec<&str, MAX_MQTT_DEVICES> = string_topics.iter().map(|s| s.as_str()).collect();
 
@@ -585,7 +557,7 @@ async fn wifi_task(
 
             let fut_res = select3(ticker_future, recv_future, new_devices_future).await;
             match fut_res {
-                Either3::First(x) => {
+                Either3::First(_) => {
                     let res = client.send_ping().await;
                     match res {
                         Ok(()) => println!("Pinged MQTT connection"),
@@ -724,8 +696,6 @@ async fn main(spawner:Spawner) {
 
     let (wifi_interface, wifi_controller) = new_with_mode(&init, esp_now_if, WifiStaDevice).unwrap();
     
-    let executor = make_static!(Executor::new());
-    
     let config = Config::dhcpv4(Default::default());
     let net_stack = make_static!(embassy_net::Stack::new(
         wifi_interface,
@@ -735,7 +705,7 @@ async fn main(spawner:Spawner) {
     ));
     spawner.spawn(connection(wifi_controller)).ok();
     spawner.spawn(net_task(net_stack)).ok();
-    spawner.spawn(wifi_task(spawner, net_stack, esp_now_send_channel, esp_now_recv_channel, esp_now_send_status_signal)).ok();
+    spawner.spawn(wifi_task(net_stack, esp_now_send_channel, esp_now_recv_channel, esp_now_send_status_signal)).ok();
 
 
 }
