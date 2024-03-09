@@ -597,8 +597,7 @@ dependencies = [
 [[package]]
 name = "esp-wifi"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c6cbcf1a41092dcc9cef4fe9beb45cdc8696d5a00c97bd7ff785de29b69a0b7"
+source = "git+https://github.com/kamo104/esp-wifi.git#790e4dd3818a6431d9872c3e546eebbc7d448ca0"
 dependencies = [
  "atomic-waker",
  "cfg-if",
@@ -608,7 +607,6 @@ dependencies = [
  "embassy-sync",
  "embedded-io",
  "embedded-io-async",
- "embedded-svc",
  "enumset",
  "esp-wifi-sys",
  "esp32-hal",
@@ -624,6 +622,7 @@ dependencies = [
  "libm",
  "linked_list_allocator",
  "log",
+ "no-std-net 0.6.0",
  "num-derive",
  "num-traits",
  "portable-atomic",
@@ -634,8 +633,7 @@ dependencies = [
 [[package]]
 name = "esp-wifi-sys"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "551b510b3944844675fcefa1301b3610fe56faa419bcc05dd0dd0056745c6654"
+source = "git+https://github.com/kamo104/esp-wifi.git#790e4dd3818a6431d9872c3e546eebbc7d448ca0"
 dependencies = [
  "anyhow",
 ]
@@ -1334,6 +1332,7 @@ dependencies = [
  "esp32-hal",
  "heapless 0.8.0",
  "int-enum",
+ "log",
  "rust-mqtt",
  "smoltcp",
  "static_cell",

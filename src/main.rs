@@ -13,8 +13,6 @@ use core::{
     fmt::Debug, 
     mem::MaybeUninit
 };
-
-
 use static_cell::make_static;
 
 use esp32_hal::{
@@ -27,7 +25,6 @@ use esp32_hal::{
     Rtc,
     embassy,
 };
-
 use esp_wifi::{
     esp_now::{
         enable_esp_now_with_wifi,
@@ -47,45 +44,42 @@ use esp_wifi::{
         WifiStaDevice, 
         WifiState,
         new_with_mode,
+        Configuration,
+        ClientConfiguration,
     },
     EspWifiInitFor
 };
 
 use embassy_executor::Spawner;
-
 use embassy_net::{
     tcp::TcpSocket,
     Config, 
     Ipv4Address
 };
-
 use embassy_futures::select::{
     select3,
     Either3
 };
-
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, 
     channel::Channel,
     signal::Signal
 };
-
 use embassy_time::{
     Duration, 
     Timer,
     Ticker,
 };
-
-use embedded_svc::wifi::{
-    ClientConfiguration, Configuration, Wifi
-};
+// use embedded_svc::wifi::{
+//     // ClientConfiguration, Wifi
+// };
 
     
 use esp_backtrace as _;
 use esp_println as _;
 
-use esp_println::println;
-// use log::{info, error, debug, warn};
+// use esp_println::println;
+use log::{info, error, debug, warn};
 
 use rust_mqtt::{
     client::{
@@ -270,15 +264,15 @@ async fn esp_now_sender_task(
         
         let data = esp_now_send_channel.receive().await;
 
-        println!("Sending esp-now message to {:?}", format_mac!(data.address));
+        info!("Sending esp-now message to {:?}", format_mac!(data.address));
         let status = esp_now_sender.send_async(&data.address, &data.data).await;
         match status {
             Ok(()) => {
-                println!("Successfully sent esp-now message");
+                info!("Successfully sent esp-now message");
                 esp_now_send_status_signal.signal(true);
             }
             Err(e) => {
-                println!("Error sending esp-now message: {:?}", e);
+                warn!("Error sending esp-now message: {:?}", e);
                 esp_now_send_status_signal.signal(false);
             }
         }
@@ -289,7 +283,7 @@ fn parse_esp_now_data(data:ReceivedData) -> Vec<DeviceData>{
     let mut new_data:Vec<DeviceData> = Vec::new();
     let mut payload = Vec::from(data.data);
     payload.truncate(data.len as usize);
-    println!("Payload: {:?}", payload);
+    debug!("Payload: {:?}", payload);
    
 
     let mut iter: Peekable<Iter<'_, u8>> = payload.iter().peekable();
@@ -297,7 +291,7 @@ fn parse_esp_now_data(data:ReceivedData) -> Vec<DeviceData>{
         let device = match EspNowDevice::from_bytes(&mut iter){
             Ok(device) => device,
             Err(e) => {
-                println!("Error parsing data {:?}", e);
+                error!("Error parsing data {:?}", e);
                 break;
             }
         };
@@ -322,10 +316,9 @@ async fn esp_now_listener_task(
         let data = receiver.receive_async().await;
         
 
-        println!("New data from: {:?}",format_mac!(data.info.src_address));
-        println!("To address: {:?}",format_mac!(data.info.dst_address));
-        // println!("data: {:?}",payload);
-        println!("Time from last message: {:?}", rtc.get_time_ms()-last_time);
+        info!("New esp-now data from: {:?}",format_mac!(data.info.src_address));
+        debug!("To address: {:?}",format_mac!(data.info.dst_address));
+        debug!("Time from last message: {:?}", rtc.get_time_ms()-last_time);
         last_time = rtc.get_time_ms();
 
         if data.info.dst_address == BROADCAST_ADDRESS || !manager.peer_exists(&data.info.src_address) { 
@@ -342,7 +335,7 @@ async fn esp_now_listener_task(
                         encrypt: false,
                     })
                     .unwrap();
-                println!("Added peer {:?}", format_mac!(data.info.src_address));
+                info!("Added peer {:?}", format_mac!(data.info.src_address));
                 reply.data[0] = 0x01;
             }
             // TODO: REGISTER THE NEW DEVICE SOMEWHERE
@@ -365,8 +358,7 @@ async fn net_task(net_stack: &'static embassy_net::Stack<WifiDevice<'static, Wif
 
 #[embassy_executor::task]
 async fn connection(mut controller: WifiController<'static>) {
-    println!("start connection task");
-    // println!("Device capabilities: {:?}", controller.get_capabilities().unwrap());
+    debug!("start connection task");
     loop {
         match esp_wifi::wifi::get_wifi_state() {
             WifiState::StaConnected => {
@@ -385,22 +377,22 @@ async fn connection(mut controller: WifiController<'static>) {
         let conf = controller.get_configuration();
 
         if conf.is_err() || conf.unwrap().as_client_conf_ref().unwrap().ssid != SSID{
-            println!("Setting configuration: {:?}", client_config);
+            debug!("Setting configuration: {:?}", client_config);
             controller.set_configuration(&client_config).unwrap();
         }
     
-        println!("Starting wifi");
+        info!("Starting wifi");
         if !matches!(controller.is_started(), Ok(true)) {
             controller.start().await.unwrap();
         }
-        println!("Wifi started!");
+        info!("Wifi started!");
         
-        println!("About to connect...");
+        info!("About to connect...");
 
         match controller.connect().await {
-            Ok(_) => println!("Wifi connected!"),
+            Ok(_) => info!("Wifi connected!"),
             Err(e) => {
-                println!("Failed to connect to wifi: {e:?}");
+                error!("Failed to connect to wifi: {e:?}");
                 Timer::after(Duration::from_millis(5000)).await
             }
         }
@@ -425,10 +417,10 @@ async fn wifi_task(
         Timer::after(Duration::from_millis(500)).await;
     }
 
-    println!("Waiting to get IP address...");
+    info!("Waiting to get IP address...");
     loop {
         if let Some(config) = net_stack.config_v4() {
-            println!("Got IP: {}", config.address);
+            info!("Got IP: {}", config.address);
             break;
         }
         Timer::after(Duration::from_millis(500)).await;
@@ -443,10 +435,10 @@ async fn wifi_task(
         // socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
 
         let remote_endpoint = (MQTT_ADDRESS, MQTT_PORT);
-        println!("Connecting to MQTT server...");
+        info!("Connecting to MQTT server...");
         let connection = socket.connect(remote_endpoint).await;
         if let Err(e) = connection {
-            println!("connect error: {:?}", e);
+            error!("connect error: {:?}", e);
             continue;
         }
 
@@ -473,17 +465,17 @@ async fn wifi_task(
             Ok(()) => {}
             Err(mqtt_error) => match mqtt_error {
                 ReasonCode::NetworkError => {
-                    println!("MQTT Network Error");
+                    error!("MQTT Network Error");
                     continue;
                 }
                 _ => {
-                    println!("Other MQTT Error: {:?}", mqtt_error);
+                    error!("Other MQTT Error: {:?}", mqtt_error);
                     continue;
                 }
             },
         }
 
-        println!("Connected to MQTT server");
+        info!("Connected to MQTT server");
         
         // TODO: subscribe to all topics
         let string_topics: Vec<String> = remembered_devices.iter().map(|device| device.command_topic()).collect();
@@ -492,8 +484,8 @@ async fn wifi_task(
         if !topics.is_empty(){
             let res = client.subscribe_to_topics(&topics).await;
             match res {
-                Ok(()) => println!("Subscribed to topics: {:?}", topics),
-                Err(e) => println!("Error subscribing to topics: {:?}", e),
+                Ok(()) => info!("Subscribed to topics: {:?}", topics),
+                Err(e) => error!("Error subscribing to topics: {:?}", e),
             }
         }
 
@@ -510,9 +502,9 @@ async fn wifi_task(
                 Either3::First(_) => {
                     let res = client.send_ping().await;
                     match res {
-                        Ok(()) => println!("Pinged MQTT connection"),
+                        Ok(()) => info!("Pinged MQTT connection"),
                         Err(e) => {
-                            println!("Error sending ping: {:?}", e);
+                            error!("Error sending ping: {:?}", e);
                             break;
                         }
                     }
@@ -524,17 +516,17 @@ async fn wifi_task(
                     let msg = match result{
                         Ok(msg) => msg,
                         Err(e) => {
-                            println!("Error receiving MQTT message: {:?}", e);
+                            error!("Error receiving MQTT message: {:?}", e);
                             break;
                         }
                     };
-                    println!("Received MQTT message: {:?}", msg);
+                    info!("Received MQTT message: {:?}", msg);
 
                     let device_mac = msg.0.strip_suffix("/set").unwrap();
                     let device_data = match remembered_devices.iter_mut().find(|data| data.command_topic() == device_mac){
                         Some(device_data) => device_data,
                         None => {
-                            println!("I can't find such a device in my memory: {:?}", device_mac);
+                            warn!("I can't find such a device in my memory: {:?}", device_mac);
                             continue;
                         }
                     };
@@ -544,21 +536,18 @@ async fn wifi_task(
                     
                     esp_now_send_channel.send(Into::<EspNowSendData>::into(*device_data)).await;
 
-                    let res = esp_now_send_status_signal.wait().await;
-                    if !res {
-                        // println!("Error sending esp-now data to device: {:?}", device.device_mac);
+                    if esp_now_send_status_signal.wait().await == false {
                         break;
                     }
                     let topic = device_data.state_topic();
                     let res = client.send_message(topic.as_str(), device_data.device.as_json().as_bytes(), QoS0, false).await;
                     match res {
-                        Ok(()) => println!("Sent an MQTT message to topic: {:?}", topic),
-                        Err(e) => println!("Error sending an MQTT message to topic: {:?} error code:{:?}", topic, e),
+                        Ok(()) => info!("Sent an MQTT message to topic: {:?}", topic),
+                        Err(e) => error!("Error sending an MQTT message to topic: {:?} error code:{:?}", topic, e),
                     }
 
                 }
                 Either3::Third(result) => {
-                    println!("Received new data: {:?}", result);
                     let new_devices:Vec<DeviceData> = result.iter().filter(
                         |device| remembered_devices.iter().find(|new_device| new_device.mac == device.mac).is_none()
                     ).cloned().collect();
@@ -566,16 +555,16 @@ async fn wifi_task(
                         |device| remembered_devices.iter().find(|new_device| new_device.mac == device.mac).is_some()
                     ).cloned().collect();
 
-                    println!("New devices: {:?}", new_devices);
-                    println!("Updated devices: {:?}", updated_devices);
+                    debug!("New devices: {:?}", new_devices);
+                    debug!("Updated devices: {:?}", updated_devices);
 
                     let string_topics: Vec<String> = new_devices.iter().map(|device_data| device_data.command_topic()).collect();
                     let topics: heapless::Vec<&str, MAX_MQTT_DEVICES> = string_topics.iter().map(|s| s.as_str()).collect();
                     if !topics.is_empty(){
                         let res = client.subscribe_to_topics(&topics).await;
                         match res {
-                            Ok(()) => println!("Subscribed to topics: {:?}", topics),
-                            Err(e) => println!("Error subscribing to topics: {:?}", e),
+                            Ok(()) => info!("Subscribed to topics: {:?}", topics),
+                            Err(e) => error!("Error subscribing to topics: {:?}", e),
                         }
                     }
                     remembered_devices.extend(new_devices);
@@ -586,8 +575,8 @@ async fn wifi_task(
 
                         let res = client.send_message(&topic, device_data.device.as_json().as_bytes(), QoS0, false).await;
                         match res {
-                            Ok(()) => println!("Sent a message to topic: {:?}", topic),
-                            Err(e) => println!("Error sending a message to topic: {:?} error code:{:?}", topic, e),
+                            Ok(()) => info!("Sent a message to topic: {:?}", topic),
+                            Err(e) => error!("Error sending a message to topic: {:?} error code:{:?}", topic, e),
                         }
                     }
                 }
@@ -598,7 +587,7 @@ async fn wifi_task(
 
 #[main]
 async fn main(spawner:Spawner) {
-    // esp_println::logger::init_logger(log::LevelFilter::Debug);
+    esp_println::logger::init_logger(log::LevelFilter::Debug);
     
     init_heap();
     let peripherals = Peripherals::take();
@@ -618,7 +607,7 @@ async fn main(spawner:Spawner) {
     )
     .unwrap();
     
-    println!("My MAC: {:?}",format_mac!(Efuse::get_mac_address()));
+    info!("My MAC: {:?}",format_mac!(Efuse::get_mac_address()));
 
     // init embassy
     let timer_g0 = TimerGroup::new(peripherals.TIMG0, &clocks);
