@@ -85,7 +85,7 @@ use esp_backtrace as _;
 use esp_println as _;
 
 use esp_println::println;
-use log::{info, error, debug, warn};
+// use log::{info, error, debug, warn};
 
 use rust_mqtt::{
     client::{
@@ -186,12 +186,12 @@ impl EspNowDevice{
             EspNowDevice::DeviceType(_) => {
                 Ok(device)
             }
-            EspNowDevice::Moving{state} =>{
-                let data = match bytes.next(){
+            EspNowDevice::Moving{ ref mut state} =>{
+                *state = match bytes.next(){
                     Some(b) => *b,
                     None => return Err(DeviceError::InvalidMessage),
                 };
-                Ok(EspNowDevice::Moving{state:data})
+                Ok(device)
             }
             _=>{
                 Err(DeviceError::UnimplementedType)
