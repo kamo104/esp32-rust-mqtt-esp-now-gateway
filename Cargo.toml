@@ -51,6 +51,9 @@ int-enum = "1.0.1"
 heapless = "0.8.0"
 log = "0.4.21"
 
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+hashbrown = { version= "0.14", features = ["serde"] }
 [features]
 default = ["esp32-hal/xtal-40mhz"]
 

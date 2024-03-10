@@ -3,21 +3,27 @@
 #![feature(type_alias_impl_trait)]
 #![feature(iter_next_chunk)]
 
+mod utils;
+use crate::utils::{
+    EspNowDevice, 
+    DeviceData, 
+    EspNowSendData
+};
+
 extern crate alloc;
 use alloc::{
-    fmt, format, string::{String, ToString}, vec::Vec,
+    format, string::{String, ToString}, vec::Vec,
 };
+
 use core::{
-    iter::Peekable,
-    slice::Iter,
-    fmt::Debug, 
-    mem::MaybeUninit
+    iter::Peekable, mem::MaybeUninit, slice::Iter
 };
 use static_cell::make_static;
 
+
 use esp32_hal::{
     clock::ClockControl, 
-    efuse::Efuse, 
+    efuse::Efuse,
     peripherals::Peripherals, 
     prelude::*, 
     timer::TimerGroup, 
@@ -25,6 +31,7 @@ use esp32_hal::{
     Rtc,
     embassy,
 };
+
 use esp_wifi::{
     esp_now::{
         enable_esp_now_with_wifi,
@@ -70,15 +77,11 @@ use embassy_time::{
     Timer,
     Ticker,
 };
-// use embedded_svc::wifi::{
-//     // ClientConfiguration, Wifi
-// };
 
     
 use esp_backtrace as _;
 use esp_println as _;
 
-// use esp_println::println;
 use log::{info, error, debug, warn};
 
 use rust_mqtt::{
@@ -90,9 +93,9 @@ use rust_mqtt::{
         reason_codes::ReasonCode,
         publish_packet::QualityOfService::QoS0,
     },
-
     utils::rng_generator::CountingRng,
 };
+
 
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("PASSWORD");
@@ -101,147 +104,6 @@ const MQTT_PORT: u16 = 1883;
 const MQTT_USERNAME: &str = env!("MQTT_USERNAME");
 const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
 const MAX_MQTT_DEVICES: usize = 64;
-
-macro_rules! format_mac {
-    ($mac:expr) => {
-        format!(
-            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-            $mac[0], $mac[1], $mac[2], $mac[3], $mac[4], $mac[5]
-        )
-    };
-}
-
-// #[derive(Debug)]
-struct EspNowSendData {
-    data: Vec<u8>,
-    address: [u8; 6],
-}
-
-#[derive(Debug)]
-enum DeviceError{
-    InvalidMessage,
-    UnknownDevice,
-    UnimplementedType,
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-struct Color {
-    red: u8,
-    green: u8,
-    blue: u8,
-}
-
-#[repr(u32)]
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum EspNowDevice {
-    DeviceType(u8) = 0xF0,
-    Motion{state:u8} = 0x21,
-    Moving{state:u8} = 0x22,
-    Light{color:Color,brightness:u8} = 0xFE,
-}
-impl Into<u8> for EspNowDevice{
-    fn into(self) -> u8{
-        match self{
-            EspNowDevice::DeviceType(byte) => 0xF0,
-            EspNowDevice::Motion{state} => 0x21,
-            EspNowDevice::Moving{state} => 0x22,
-            EspNowDevice::Light{color, brightness} => 0xFE,
-        }
-    }
-}
-impl EspNowDevice{
-    fn try_from(byte:u8) -> Option<EspNowDevice>{
-        match byte{
-            0xF0 => Some(EspNowDevice::DeviceType(byte)),
-            0x21 => Some(EspNowDevice::Motion{state:0}),
-            0x22 => Some(EspNowDevice::Moving{state:0}),
-            0xFE => Some(EspNowDevice::Light{color:Color{red:0,green:0,blue:0},brightness:0}),
-            _ => None,
-        }
-    }
-    fn as_bytes(self) -> Vec<u8>{
-        match self{
-            EspNowDevice::DeviceType(byte) => Vec::from([byte]),
-            EspNowDevice::Motion{state} => Vec::from([Into::<u8>::into(self), state]),
-            EspNowDevice::Moving{state} => Vec::from([Into::<u8>::into(self), state]),
-            EspNowDevice::Light{color, brightness} => Vec::from([Into::<u8>::into(self), color.red, color.green, color.blue, brightness]),
-        }
-    }
-    fn from_bytes(bytes: &mut Peekable<Iter<u8>>) -> Result<EspNowDevice, DeviceError>{
-        let b1 = match bytes.next(){
-            Some(b) => *b,
-            None => return Err(DeviceError::InvalidMessage),
-        };
-        let mut device = match EspNowDevice::try_from(b1){
-            Some(device) => device,
-            None => return Err(DeviceError::UnknownDevice),
-        };
-        match device{
-            EspNowDevice::DeviceType(_) => {
-                Ok(device)
-            }
-            EspNowDevice::Moving{ ref mut state} =>{
-                *state = match bytes.next(){
-                    Some(b) => *b,
-                    None => return Err(DeviceError::InvalidMessage),
-                };
-                Ok(device)
-            }
-            _=>{
-                Err(DeviceError::UnimplementedType)
-            }
-        }
-    }
-    fn as_json(&self) -> String{
-        // TODO: implement json serialization
-        String::new()
-    }
-    fn set_json(&mut self, json: &str){
-        // TODO: implement json deserialization
-    }
-}
-
-#[derive(PartialEq,Clone, Copy)]
-struct MacAddr {
-    mac: [u8; 6],
-}
-impl From<[u8; 6]> for MacAddr {
-    fn from(mac: [u8; 6]) -> Self {
-        MacAddr { mac }
-    }
-}
-impl Debug for MacAddr {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", self.mac[0], self.mac[1], self.mac[2], self.mac[3], self.mac[4], self.mac[5])
-    }
-}
-impl ToString for MacAddr {
-    fn to_string(&self) -> String {
-        format_mac!(self.mac)
-    }
-}
-
-#[derive(Debug,Clone, Copy)]
-struct DeviceData {
-    mac: MacAddr,
-    device: EspNowDevice,
-}
-impl Into<EspNowSendData> for DeviceData{
-    fn into(self) -> EspNowSendData{
-        EspNowSendData{
-            data: self.device.as_bytes(),
-            address: self.mac.mac,
-        }
-    }
-}
-impl DeviceData{
-    fn state_topic(&self) -> String {
-        self.mac.to_string() + "/state"
-    }
-    fn command_topic(&self) -> String {
-        self.mac.to_string() + "/set"
-    }
-}
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -265,6 +127,7 @@ async fn esp_now_sender_task(
         let data = esp_now_send_channel.receive().await;
 
         info!("Sending esp-now message to {:?}", format_mac!(data.address));
+        debug!("Payload: {:?}", data.data);
         let status = esp_now_sender.send_async(&data.address, &data.data).await;
         match status {
             Ok(()) => {
@@ -338,9 +201,7 @@ async fn esp_now_listener_task(
                 info!("Added peer {:?}", format_mac!(data.info.src_address));
                 reply.data[0] = 0x01;
             }
-            // TODO: REGISTER THE NEW DEVICE SOMEWHERE
             esp_now_send_channel.send(reply).await;
-            // continue;
         }
         
         let new_data = parse_esp_now_data(data);
@@ -436,10 +297,12 @@ async fn wifi_task(
 
         let remote_endpoint = (MQTT_ADDRESS, MQTT_PORT);
         info!("Connecting to MQTT server...");
-        let connection = socket.connect(remote_endpoint).await;
-        if let Err(e) = connection {
-            error!("connect error: {:?}", e);
-            continue;
+        match socket.connect(remote_endpoint).await {
+            Ok(()) => {}
+            Err(e) => {
+                error!("connect error: {:?}", e);
+                continue;
+            },
         }
 
         let mut config = ClientConfig::new(
@@ -455,11 +318,11 @@ async fn wifi_task(
 
         let mqtt_reset_timeout = config.keep_alive-5;
 
-        let mut recv_buffer = [0; 80];
-        let mut write_buffer = [0; 80];
+        let mut recv_buffer = [0; 1000];
+        let mut write_buffer = [0; 1000];
 
         let mut client =
-            MqttClient::<_, 5, _>::new(socket, &mut write_buffer, 80, &mut recv_buffer, 80, config);
+            MqttClient::<_, 5, _>::new(socket, &mut write_buffer, 1000, &mut recv_buffer, 1000, config);
 
         match client.connect_to_broker().await {
             Ok(()) => {}
@@ -481,7 +344,7 @@ async fn wifi_task(
         let string_topics: Vec<String> = remembered_devices.iter().map(|device| device.command_topic()).collect();
         let topics: heapless::Vec<&str, MAX_MQTT_DEVICES> = string_topics.iter().map(|s| s.as_str()).collect();
 
-        if !topics.is_empty(){
+        if topics.is_empty() == false{
             let res = client.subscribe_to_topics(&topics).await;
             match res {
                 Ok(()) => info!("Subscribed to topics: {:?}", topics),
@@ -520,10 +383,10 @@ async fn wifi_task(
                             break;
                         }
                     };
-                    info!("Received MQTT message: {:?}", msg);
+                    info!("Received MQTT message: {:?}", String::from_utf8_lossy(msg.1));
 
                     let device_mac = msg.0.strip_suffix("/set").unwrap();
-                    let device_data = match remembered_devices.iter_mut().find(|data| data.command_topic() == device_mac){
+                    let device_data = match remembered_devices.iter_mut().find(|data| data.mac.to_string() == device_mac){
                         Some(device_data) => device_data,
                         None => {
                             warn!("I can't find such a device in my memory: {:?}", device_mac);
@@ -537,11 +400,10 @@ async fn wifi_task(
                     esp_now_send_channel.send(Into::<EspNowSendData>::into(*device_data)).await;
 
                     if esp_now_send_status_signal.wait().await == false {
-                        break;
+                        continue;
                     }
                     let topic = device_data.state_topic();
-                    let res = client.send_message(topic.as_str(), device_data.device.as_json().as_bytes(), QoS0, false).await;
-                    match res {
+                    match client.send_message(topic.as_str(), device_data.device.as_json().as_bytes(), QoS0, false).await {
                         Ok(()) => info!("Sent an MQTT message to topic: {:?}", topic),
                         Err(e) => error!("Error sending an MQTT message to topic: {:?} error code:{:?}", topic, e),
                     }
@@ -571,9 +433,18 @@ async fn wifi_task(
                     
 
                     for device_data in updated_devices{
+                        // internal data change
+                        let mut iter = remembered_devices.iter_mut().filter(
+                            |data| data.mac == device_data.mac && data.device.variant() == device_data.device.variant()
+                        );
+                        if let Some(data) = iter.next(){
+                            data.device = device_data.device;
+                        }
+                        // mqtt response
                         let topic = device_data.state_topic();
-
-                        let res = client.send_message(&topic, device_data.device.as_json().as_bytes(), QoS0, false).await;
+                        let message = device_data.device.as_json();
+                        let res = client.send_message(&topic, message.as_bytes(), QoS0, false).await;
+                        debug!("MQTT message: {:?}", message);
                         match res {
                             Ok(()) => info!("Sent a message to topic: {:?}", topic),
                             Err(e) => error!("Error sending a message to topic: {:?} error code:{:?}", topic, e),
