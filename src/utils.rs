@@ -10,6 +10,7 @@ use core::{
 
 use log::error;
 
+#[cfg(feature="serde")]
 use serde::{Deserialize, Serialize};
 
 #[macro_export]
@@ -29,14 +30,14 @@ pub struct EspNowSendData {
 }
 
 #[derive(Debug)]
-pub  enum DeviceError{
+pub enum DeviceError{
     InvalidMessage,
     UnknownDevice,
     UnimplementedType,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature="serde",derive(Serialize, Deserialize))]
 pub struct Color {
     r: u8,
     g: u8,
@@ -49,8 +50,7 @@ pub struct Color {
 // - added Light device type (0xFE)
 #[repr(u32)]
 #[derive(Debug, PartialEq, Clone, Copy)]
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature="serde",derive(Serialize, Deserialize),serde(tag = "type"))]
 pub enum EspNowDevice {
     DeviceType(u8) = 0xF0,
 
@@ -126,7 +126,7 @@ impl EspNowDevice{
         }
     }
 
-
+    #[cfg(feature="serde")]
     pub fn as_json(&self) -> String{
         let mut message:hashbrown::HashMap<String, serde_json::Value> = match serde_json::from_str(serde_json::to_string(self).unwrap().as_str()){
             Ok(message) => message,
@@ -141,6 +141,7 @@ impl EspNowDevice{
         
         return serde_json::to_string(&message).unwrap();
     }
+    #[cfg(feature="serde")]
     pub fn set_json(&mut self, json: &str){
         let message:hashbrown::HashMap<String, serde_json::Value> = match serde_json::from_str(json){
             Ok(message) => message,
