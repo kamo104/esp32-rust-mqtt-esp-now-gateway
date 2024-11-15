@@ -32,12 +32,9 @@ embedded-svc = { version = "0.27.0", default-features = false, features = [] }
 esp-hal-procmacros = { version = "0.8.0", default-features=false, features = ["ram","embassy","esp32","interrupt"] }
 esp-wifi = { git="https://github.com/kamo104/esp-wifi.git", version = "0.3.0", features = ["esp32","wifi","esp-now","async","embassy-net"] }
 esp32-hal = {version = "0.18.0", default-features=true, features=[
-    # "embassy",
     "embassy-time-timg0",
-    # "rt",
     "embassy-executor-interrupt",
     "embassy-executor-thread",
-    # "embassy-integrated-timers"
 ]}
 
 esp-backtrace = { version = "0.10.0", features = ["esp32", "panic-handler", "exception-handler", "print-uart"] }

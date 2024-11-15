@@ -51,61 +51,64 @@ pub struct Color {
 #[repr(u32)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[cfg_attr(feature="serde",derive(Serialize, Deserialize),serde(tag = "type"))]
-pub enum EspNowDevice {
+pub enum EspNowDeviceType {
     DeviceType(u8) = 0xF0,
 
     Motion{state:u8} = 0x21,
     Moving{state:u8} = 0x22,
     Light{state:u8,brightness:u8,color:Color} = 0xFE,
 }
-impl Into<u8> for EspNowDevice{
+impl Into<u8> for EspNowDeviceType{
     fn into(self) -> u8{
         match self{
-            EspNowDevice::DeviceType(_) => 0xF0,
+            EspNowDeviceType::DeviceType(_) => 0xF0,
 
-            EspNowDevice::Motion{state: _} => 0x21,
-            EspNowDevice::Moving{state: _} => 0x22,
-            EspNowDevice::Light{color: _, brightness: _, state: _} => 0xFE,
+            EspNowDeviceType::Motion{state: _} => 0x21,
+            EspNowDeviceType::Moving{state: _} => 0x22,
+            EspNowDeviceType::Light{color: _, brightness: _, state: _} => 0xFE,
         }
     }
 }
-impl EspNowDevice{
+impl TryFrom<u8> for EspNowDeviceType{
+    type Error = ();
+    fn try_from(byte:u8) -> Result<EspNowDeviceType, ()>{
+        match byte{
+            0xF0 => Ok(EspNowDeviceType::DeviceType(byte)),
+            0x21 => Ok(EspNowDeviceType::Motion{state:0}),
+            0x22 => Ok(EspNowDeviceType::Moving{state:0}),
+            0xFE => Ok(EspNowDeviceType::Light{state:0,brightness:0,color:Color{r:0,g:0,b:0}}),
+            _ => Err(()),
+        }
+    }
+}
+impl EspNowDeviceType{
     pub fn variant(self) -> u8{
         self.into()
     }
-    fn try_from(byte:u8) -> Option<EspNowDevice>{
-        match byte{
-            0xF0 => Some(EspNowDevice::DeviceType(byte)),
-            0x21 => Some(EspNowDevice::Motion{state:0}),
-            0x22 => Some(EspNowDevice::Moving{state:0}),
-            0xFE => Some(EspNowDevice::Light{state:0,brightness:0,color:Color{r:0,g:0,b:0}}),
-            _ => None,
-        }
-    }
-    fn as_bytes(self) -> Vec<u8>{
+    pub fn as_bytes(self) -> Vec<u8>{
         match self{
-            EspNowDevice::DeviceType(byte) => Vec::from([byte]),
-            EspNowDevice::Motion{state} => Vec::from([self.variant(), state]),
-            EspNowDevice::Moving{state} => Vec::from([self.variant(), state]),
-            EspNowDevice::Light{state,brightness,color} => Vec::from([self.variant(), state, brightness, color.r, color.g, color.b]),
+            EspNowDeviceType::DeviceType(byte) => Vec::from([byte]),
+            EspNowDeviceType::Motion{state} => Vec::from([self.variant(), state]),
+            EspNowDeviceType::Moving{state} => Vec::from([self.variant(), state]),
+            EspNowDeviceType::Light{state,brightness,color} => Vec::from([self.variant(), state, brightness, color.r, color.g, color.b]),
         }
     }
-    pub fn from_bytes(bytes: &mut Peekable<Iter<u8>>) -> Result<EspNowDevice, DeviceError>{
+    pub fn from_bytes(bytes: &mut Peekable<Iter<u8>>) -> Result<EspNowDeviceType, DeviceError>{
         let b1 = match bytes.next(){
             Some(b) => *b,
             None => return Err(DeviceError::InvalidMessage),
         };
-        let mut device = match EspNowDevice::try_from(b1){
-            Some(device) => device,
-            None => return Err(DeviceError::UnknownDevice),
+        let mut device = match EspNowDeviceType::try_from(b1){
+            Ok(device) => device,
+            Err(_e) => return Err(DeviceError::UnknownDevice),
         };
         match device{
-            EspNowDevice::DeviceType(_) => {
+            EspNowDeviceType::DeviceType(_) => {
                 match bytes.next_chunk::<2>(){
                     Ok(b) => {
-                        device = match EspNowDevice::try_from(*b[1]){
-                            Some(device) => device,
-                            None => return Err(DeviceError::UnknownDevice),
+                        device = match EspNowDeviceType::try_from(*b[1]){
+                            Ok(device) => device,
+                            Err(_e) => return Err(DeviceError::UnknownDevice),
                         };
                     },
                     Err(_non_full_iter) => return Err(DeviceError::InvalidMessage),
@@ -113,7 +116,7 @@ impl EspNowDevice{
 
                 return Ok(device);
             }
-            EspNowDevice::Moving{ ref mut state} =>{
+            EspNowDeviceType::Moving{ ref mut state} =>{
                 *state = match bytes.next(){
                     Some(b) => *b,
                     None => return Err(DeviceError::InvalidMessage),
@@ -151,7 +154,7 @@ impl EspNowDevice{
             }
         };
         match self{
-            EspNowDevice::Light{state, brightness, color} => {
+            EspNowDeviceType::Light{state, brightness, color} => {
                 if let Some(value) = message.get("state"){
                     *state = match value.as_str(){
                         Some(value) => if value == "ON" {1} else {0},
@@ -235,7 +238,7 @@ impl ToString for MacAddr {
 #[derive(Debug,Clone, Copy)]
 pub struct DeviceData {
     pub mac: MacAddr,
-    pub device: EspNowDevice,
+    pub device: EspNowDeviceType,
 }
 impl Into<EspNowSendData> for DeviceData{
     fn into(self) -> EspNowSendData{

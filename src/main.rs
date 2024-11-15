@@ -5,7 +5,7 @@
 
 mod utils;
 use crate::utils::{
-    EspNowDevice, 
+    EspNowDeviceType, 
     DeviceData, 
     EspNowSendData
 };
@@ -151,7 +151,7 @@ fn parse_esp_now_data(data:ReceivedData) -> Vec<DeviceData>{
 
     let mut iter: Peekable<Iter<'_, u8>> = payload.iter().peekable();
     while let Some(_) = iter.peek() {
-        let device = match EspNowDevice::from_bytes(&mut iter){
+        let device = match EspNowDeviceType::from_bytes(&mut iter){
             Ok(device) => device,
             Err(e) => {
                 error!("Error parsing data {:?}", e);
@@ -310,7 +310,7 @@ async fn wifi_task(
             CountingRng(20000),
         );
         config.add_max_subscribe_qos(QoS0);
-        config.add_client_id("esp32-server");
+        config.add_client_id("esp32-server-iteridk");
         config.add_username(MQTT_USERNAME);
         config.add_password(MQTT_PASSWORD);
         config.max_packet_size = 100;
